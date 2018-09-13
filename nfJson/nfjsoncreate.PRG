@@ -13,6 +13,8 @@
 * Added Json validation ; throws error for invalid Json.
 * ver 1.120
 * encode control characters ( chr(0) ~ chr(31) ) 
+* ver 1.130
+* remove suffix from serialized collection, making it a simple JSON-Array
 *-----------------------------------------------------------------------
 parameters ovfp,formattedOutput,nonullarrayitem,crootName,aMembersFlag
 
@@ -48,9 +50,6 @@ case esarray
 case type('oVfp.BaseClass')='C' and ovfp.baseclass = 'Collection'
 	cjson = procobject(ovfp,.t.,m.nonullarrayitem,m.amembersFlag)
 
-	cRootName    = evl(m.cRootName,'collection')
-	cjson = '{"'+m.cRootName+collTagName(oVfp)+'": '+cjson+'}'+IIF(formattedoutput,crlf,'')+'}'
-
 otherwise
 	cjson = '{'+procobject(ovfp,.f.,m.nonullarrayitem,m.amembersFlag)+'}'
 
@@ -59,11 +58,6 @@ endcase
 SET POINT TO (m.lcPoint)
 
 return ltrim(m.cjson)
-
-*----------------------------------------
-function collTagName(thiscoll)
-*----------------------------------------
-return iif( m.thiscoll.Count > 0 And !Empty( m.thiscoll.GetKey(1) ), '_kv_collection','_kl_collection' )
 
 *----------------------------------------------------------------------------------
 function procobject(obt,iscollection,nonullarrayitem,amembersFlag)
@@ -85,14 +79,9 @@ iscollection =  bc = 'Collection'
 
 if m.iscollection
 
-
-	este = m.este+'{ '+m.xtabs
-	xtabs = nivel(2)
-	este = m.este+'"collectionitems": ['+m.xtabs
-
+	este = m.este+'['+m.xtabs
 	procCollection(obt,m.noNullArrayItem,m.amembersFlag)
 
-	xtabs = nivel(-2)
 	este  = m.este+m.xtabs+']'
 
 else
@@ -138,9 +127,7 @@ else
 
 			if bc = 'Collection' 
 
-				este = rtrim(m.este,1,'":')+ collTagName( m.thiso )+'":'
-
-				este =  m.este+procobject(m.obt.&var,.t.,m.nonullarrayitem,m.amembersFlag)+[}]
+				este =  m.este+procobject(m.obt.&var,.t.,m.nonullarrayitem,m.amembersFlag)
 
 			else
 
@@ -213,12 +200,8 @@ do while m.nelem <= m.titems
 			bc = iif(type('m.elem.baseclass')='C',m.elem.baseclass,'?')
 
 			if bc = 'Collection' 
-
-				este = m.este+' { "collection'+ collTagName( m.elem )+'":'
 				
    				este =  m.este+procobject(m.elem ,.t.,m.nonullarrayitem,m.amembersFlag)
-
-				este = m.este + '}'+m.xTabs+'}'
 				
 			else
 
@@ -243,7 +226,7 @@ enddo
 
 xtabs=nivel(-2)
 
-este = m.este+m.xtabs+']'
+este = m.este+']'
 
 
 
@@ -360,8 +343,6 @@ With obt
 
 			if vartype( m.elem.baseclass ) = 'C' and m.elem.baseclass = 'Collection'
 				isCollection = .t.
-				este = m.este+'{ '+m.xTabs+'"collection'+collTagName(m.elem)+'" :'
-				xTabs = nivel(2)
 			else
 				isCollection = .f.
 				m.este = m.este+'{'
@@ -369,12 +350,9 @@ With obt
 
 			este = m.este+procObject(m.elem, m.isCollection , m.noNullArrayItem, m.aMembersFlag )
 		
-			este = m.este+'}'
-		
-			if m.isCollection
-				xTabs = nivel(-2)
-				este = m.este+m.xTabs+'}'
-			endif
+			IF !m.isCollection 
+				este = m.este+'}'
+			ENDIF
 
 		Endif
 

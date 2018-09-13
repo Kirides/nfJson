@@ -1,7 +1,7 @@
 *-------------------------------------------------------------------
 * Created by Marco Plaza , 2013-2017 @nfTools
 *-------------------------------------------------------------------
-lparameters cjsonstr,revivecollection
+lparameters cjsonstr
 
 #define crlf chr(13)+chr(10)
 
@@ -25,7 +25,7 @@ try
 
 	ost = set('strictdate')
 	set strictdate to 0
-	ojson = nfjsonread2(m.cjsonstr, m.revivecollection)
+	ojson = nfjsonread2(m.cjsonstr)
 	set strictdate to (m.ost)
 
 catch to oerr1
@@ -42,7 +42,7 @@ return iif(vartype(m.ojson)='O',m.ojson,.null.)
 
 
 *-------------------------------------------------------------------------
-function nfjsonread2(cjsonstr,revivecollection)
+function nfjsonread2(cjsonstr)
 *-------------------------------------------------------------------------
 
 
@@ -84,10 +84,6 @@ try
 
 	endcase
 
-
-	if m.revivecollection
-		ojson = revivecollection(m.ojson)
-	endif
 
 
 catch to oerr
@@ -209,33 +205,12 @@ function anuevoel(obj,arrayname,valasig,bidim,colpos,rowpos)
 *-----------------------------------------------------------------------------
 
 
-if m.bidim
+rowpos = m.rowpos+1
 
-	colpos = m.colpos+1
+obj.&arrayname..Add(m.valasig)
 
-	if colpos > m.ncols
-		ncols = m.colpos
-	endif
-
-	dimension obj.&arrayname(m.rowpos,m.ncols)
-
-	obj.&arrayname(m.rowpos,m.colpos) = m.valasig
-
-	if vartype(m.valasig) = 'O'
-		procstring(obj.&arrayname(m.rowpos,m.colpos))
-	endif
-
-else
-
-	rowpos = m.rowpos+1
-	dimension obj.&arrayname(m.rowpos)
-
-	obj.&arrayname(m.rowpos) = m.valasig
-
-	if vartype(m.valasig) = 'O'
-		procstring(obj.&arrayname(m.rowpos))
-	endif
-
+if vartype(m.valasig) = 'O'
+	procstring(obj.&arrayname..Item(m.rowpos))
 endif
 
 
@@ -379,10 +354,10 @@ case  aj(x) = '['
 
 
 		try
-			addproperty(obj,(m.arrayname+'(1)'),.NULL.)
+			addproperty(obj,(m.arrayname),CREATEOBJECT("Collection"))
 		catch
 			m.arrayname = m.arrayname+'_vfpSafe_'
-			addproperty(obj,(m.arrayname+'(1)'),.NULL.)
+			addproperty(obj,(m.arrayname),CREATEOBJECT("Collection"))
 		endtry
 
 
@@ -392,7 +367,6 @@ case  aj(x) = '['
 		colpos = 0
 		ncols = 1
 
-		dime obj.&arrayname(1,2)
 		bidim = .t.
 
 	endcase
@@ -583,110 +557,6 @@ else
 	expectingpropertyname = .f.
 endif
 
-
-*----------------------------------------------
-function revivecollection( o )
-*----------------------------------------------
-
-private all
-
-oconv = createobject('empty')
-
-nprop = amembers(elem,m.o,0,'U')
-
-for x = 1 to m.nprop
-
-	estavar = m.elem(x)
-
-	esarray = .f.
-	escoleccion = type('m.o.'+m.estavar) = 'O' and right( m.estavar , 14 ) $ '_KV_COLLECTION,_KL_COLLECTION' and type( 'm.o.'+m.estavar+'.collectionitems',1) = 'A'
-
-	do case
-	case m.escoleccion
-
-		estaprop = createobject('collection')
-
-		tv = m.o.&estavar
-
-		m.keyvalcoll = right( m.estavar , 14 ) = '_KV_COLLECTION'
-		
-		if not ( alen(m.tv.collectionItems) = 1 and isnull( m.tv.collectionItems ) )
-		
-
-		for t = 1 to alen(m.tv.collectionitems)
-
-			if m.keyvalcoll
-				esteval = m.tv.collectionitems(m.t).value
-			else
-				esteval = m.tv.collectionitems(m.t)
-			endif
-
-
-			if vartype(m.esteval) = 'O' or type('esteVal',1) = 'A'
-				esteval = revivecollection(m.esteval)
-			endif
-
-			if m.keyvalcoll
-				estaprop.add(esteval,m.tv.collectionitems(m.t).key)
-			else
-				estaprop.add(m.esteval)
-			endif
-
-		endfor
-
-endif
-
-	case type('m.o.'+m.estavar,1) = 'A'
-
-		esarray = .t.
-
-		for t = 1 to alen(m.o.&estavar)
-
-			dimension &estavar(m.t)
-
-			if type('m.o.&estaVar(m.T)') = 'O'
-				&estavar(m.t) = revivecollection(m.o.&estavar(m.t))
-			else
-				&estavar(m.t) = m.o.&estavar(m.t)
-			endif
-
-		endfor
-
-	case type('m.o.'+estavar) = 'O'
-		estaprop = revivecollection(m.o.&estavar)
-
-	otherwise
-		estaprop = m.o.&estavar
-
-	endcase
-
-
-	estavar = strtran( m.estavar,'_KV_COLLECTION', '' )
-	estavar = strtran( m.estavar, '_KL_COLLECTION', '' )
-
-	do case
-	case m.escoleccion
-		addproperty(m.oconv,m.estavar,m.estaprop)
-	case  m.esarray
-		addproperty(m.oconv,m.estavar+'(1)')
-		acopy(&estavar,m.oconv.&estavar)
-	otherwise
-		addproperty(m.oconv,m.estavar,m.estaprop)
-	endcase
-
-endfor
-
-try
-	retcollection = m.oconv.collection.baseclass = 'Collection'
-catch
-	retcollection = .f.
-endtry
-
-if m.retcollection
-	return m.oconv.collection
-else
-	return m.oconv
-endif
 
 
 *----------------------------------
