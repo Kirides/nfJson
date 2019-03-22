@@ -1,363 +1,256 @@
 *-------------------------------------------------------------------
 * Created by Marco Plaza @nfTools
-* ver 1.100 - 24/02/2016 
+* ver 1.100 - 24/02/2016
 * enabled collection processing
-* ver 1.101 - 24/02/2016 
-* solved indentation on nested collections
+* ver 1.101 - 24/02/2016
+* solved indent on nested collections
 * ver 1.110 -11/03/2016
 * -added support for collections inside arrays
-* -user can pass aMemembersFlag value 
-*  ( since Json is intended for DTO creation default value is 'U' )
+* -user can pass aMemembersFlag value
+*  (since Json is intended for DTO creation default value is 'U')
 *   check amembers topic on vfp help file for usage
 * changed cr to crlf
 * Added Json validation ; throws error for invalid Json.
 * ver 1.120
-* encode control characters ( chr(0) ~ chr(31) ) 
+* encode control characters (chr(0) ~ chr(31))
 * ver 1.130
 * remove suffix from serialized collection, making it a simple JSON-Array
+* ver 1.131
+* Refactor naming, order of methods, put #DEFINE at top
 *-----------------------------------------------------------------------
-parameters ovfp,formattedOutput,nonullarrayitem,crootName,aMembersFlag
+#DEFINE crlf CHR(13) + CHR(10)
+#DEFINE PAD_SEQUENCE '  '
+#DEFINE specialChars ["\/] + CHR(127) + CHR(12) + CHR(10) + CHR(13) + CHR(9) + CHR(0) + CHR(1) + CHR(2) + CHR(3) + CHR(4) + CHR(5) + CHR(6) + CHR(7) + CHR(8) + CHR(9) + CHR(10) + CHR(11) + CHR(12) + CHR(13) + CHR(14) + CHR(15) + CHR(16) + CHR(17) + CHR(18) + CHR(19) + CHR(20) + CHR(21) + CHR(22) + CHR(23) + CHR(24) + CHR(25) + CHR(26) + CHR(27) + CHR(28) + CHR(29) + CHR(30) + CHR(31)
 
-#define crlf chr(13)+Chr(10)
+PARAMETERS ovfp, FORMATTEDOUTPUT, nonullarrayitem, crootName, aMembersFlag
+PRIVATE ALL
 
-private all
-amembersFlag = evl(m.amembersFlag,'U')
-
-esarray = type('oVfp',1) = 'A'
-esobjeto = vartype(m.ovfp) = 'O'
-
-if !m.esarray and !m.esobjeto
-	Error 'must supply a vfp object/array'
-	return
-endif
-
-_nivel = iif( cast(m.formattedOutput as l ) , 1, -1)
-
-lcPoint = set('Point')
+aMembersFlag = EVL(m.aMembersFlag, 'U')
+isArray = TYPE('oVfp', 1) = 'A'
+isObject = VARTYPE(m.ovfp) = 'O'
+IF !m.isArray AND !m.isObject
+	ERROR 'must supply a vfp object/array'
+	RETURN
+ENDIF
+_indentation = IIF(CAST(m.formattedOutput AS l) , 1, -1)
+lcPoint = SET('Point')
 SET POINT TO '.'
+DO CASE
+	CASE isArray
+		ojson = CREATEOBJECT('empty')
+		ADDPROPERTY(ojson, 'array(1)')
+		ACOPY(ovfp, ojson.ARRAY)
+		cjson = fromObject(ojson, .F., m.nonullarrayitem, m.aMembersFlag)
+		cjson = SUBSTR(m.cjson, AT('[', m.cjson))
 
-do case
-case esarray
-
-	ojson = createobject('empty')
-
-	addproperty(ojson,'array(1)')
-	acopy(ovfp,ojson.array)
-	cjson = procobject(ojson,.f.,m.nonullarrayitem,m.amembersFlag)
-	cJson = substr( m.cJson,at('[',m.cJson))
-
-
-case type('oVfp.BaseClass')='C' and ovfp.baseclass = 'Collection'
-	cjson = procobject(ovfp,.t.,m.nonullarrayitem,m.amembersFlag)
-
-otherwise
-	cjson = '{'+procobject(ovfp,.f.,m.nonullarrayitem,m.amembersFlag)+'}'
-
-endcase
-
+	CASE TYPE('oVfp.BaseClass')='C' AND ovfp.BASECLASS = 'Collection'
+		cjson = fromObject(ovfp, .T., m.nonullarrayitem, m.aMembersFlag)
+	OTHERWISE
+		cjson = '{' + fromObject(ovfp, .F., m.nonullarrayitem, m.aMembersFlag) + '}'
+ENDCASE
 SET POINT TO (m.lcPoint)
-
-return ltrim(m.cjson)
+RETURN LTRIM(m.cjson)
 
 *----------------------------------------------------------------------------------
-function procobject(obt,iscollection,nonullarrayitem,amembersFlag)
+FUNCTION fromObject(obt, isCollection, nonullarrayitem, aMembersFlag)
 *----------------------------------------------------------------------------------
-
-if isnull(m.obt)
-	return 'null'
-endif
-
-private all except _nivel
-
-este = ''
-
-xtabs = nivel(2)
-
-bc = iif(type('m.obt.baseclass')='C',m.obt.baseclass,'?')
-
-iscollection =  bc = 'Collection' 
-
-if m.iscollection
-
-	este = m.este+'['+m.xtabs
-	procCollection(obt,m.noNullArrayItem,m.amembersFlag)
-
-	este  = m.este+m.xtabs+']'
-
-else
-
-	amembers(am,m.obt,0,m.amembersFlag)
-	
-	if vartype(m.am) = 'U'
-		xtabs=m.nivel(-2)
-		return ''
-	endif
-
-
-	nm = alen(am)
-
-	for x1 = 1 to m.nm
-
-		var = lower(am(m.x1))
-		
-		este = m.este+iif(m.x1>1,',','')+m.xtabs
-
-		este = m.este+["]+strtran(m.var,'_vfpsafe_','')+[":]
-		
-		esobjeto = type('m.obt.&Var')='O'
-
-		if type('m.obt.&var') = 'U'
-			este = m.este+["unable to evaluate expression"]
-			loop
-		endif
-
-		esarray  = type('m.obt.&Var',1) = 'A'
-
-		do case
-
-		case m.esarray
-
-			procarray(m.obt,m.var,m.nonullarrayitem)
-
-		case m.esobjeto
-
-			thiso=m.obt.&var
-
-			bc = iif(type('m.thiso.baseclass')='C',m.thiso.baseclass,'?')
-
-			if bc = 'Collection' 
-
-				este =  m.este+procobject(m.obt.&var,.t.,m.nonullarrayitem,m.amembersFlag)
-
-			else
-
-				este =  m.este+[{]+procobject(m.obt.&var,.f.,m.nonullarrayitem,m.amembersFlag)+[}]
-
-			endif
-
-		otherwise
-
-
-			este = m.este+concatval(m.obt.&var)
-
-		endcase
-
-	endfor
-
-
-endif
-
-	xtabs = nivel(-2)
-	este  = m.este+m.xtabs
-
-
-return m.este
-
-
-*----------------------------------------------------
-procedure procarray(obt,arrayName,nonullarrayitem)
-*----------------------------------------------------
-nrows = alen(m.obt.&arrayName,1)
-ncols = alen(m.obt.&arrayName,2)
-bidim = m.ncols > 0
-ncols = iif(m.ncols=0,m.nrows,m.ncols)
-titems = alen(m.obt.&arrayName)
-
-xtabs=nivel(2)
-
-este = m.este+'['+m.xtabs
-nelem = 1
-
-do while m.nelem <= m.titems
-
-	este = m.este+iif(m.nelem>1,','+m.xtabs,'')
-
-	if m.bidim
-		xtabs = nivel(2)
-		este = m.este+'['+m.xtabs
-	endif
-
-	for pn = m.nelem to m.nelem+m.ncols-1
-
-		elem = m.obt.&arrayName( m.pn )
-
-		este = m.este+iif(m.pn>m.nelem,','+m.xtabs,'')
-
-		if vartype(m.elem) # 'O'
-
-			if m.nelem+m.ncols-1 = 1 and isnull(m.elem) and m.nonullarrayitem
-
-				este = m.este+""
-
-			else
-				este = m.este+concatval(m.elem)
-
-			endif
-
-		else
-
-
-			bc = iif(type('m.elem.baseclass')='C',m.elem.baseclass,'?')
-
-			if bc = 'Collection' 
-				
-   				este =  m.este+procobject(m.elem ,.t.,m.nonullarrayitem,m.amembersFlag)
-				
-			else
-
-   				este =  m.este+[{]+procobject(m.elem ,.f.,m.nonullarrayitem,m.amembersFlag)+[}]
-
-			endif
-
-			
-		endif
-
-	endfor
-
-	nelem = m.pn
-
-	if m.bidim
-		xtabs=nivel(-2)
-		este = m.este+m.xtabs+']'
-	endif
-
-enddo
-
-
-xtabs=nivel(-2)
-
-este = m.este+']'
-
-
-
-
-
-*-----------------------------
-function nivel(n)
-*-----------------------------
-if m._nivel = -1
-	return ''
-else
-	_nivel= m._nivel+m.n
-	return crlf+replicate('  ',m._nivel)
-endif
-
-*-----------------------------
-function concatval(valor)
-*-----------------------------
-
-#define specialChars ["\/]+chr(127)+chr(12)+chr(10)+chr(13)+chr(9)+CHR(0)+CHR(1)+CHR(2)+CHR(3)+CHR(4)+CHR(5)+CHR(6)+CHR(7)+CHR(8)+CHR(9)+CHR(10)+CHR(11)+CHR(12)+CHR(13)+CHR(14)+CHR(15)+CHR(16)+CHR(17)+CHR(18)+CHR(19)+CHR(20)+CHR(21)+CHR(22)+CHR(23)+CHR(24)+CHR(25)+CHR(26)+CHR(27)+CHR(28)+CHR(29)+CHR(30)+CHR(31)
-
-if isnull(m.valor)
-
-	return 'null'
-
-else
-
-
-	tvar = vartype(m.valor)
-	** no cambiar el orden de ejecución!
-	do case
-	case m.tvar $ 'FBYINQ'
-		vc = rtrim(cast( m.valor as c(32)))
-	case m.tvar = 'L'
-		vc = iif(m.valor,'true','false')
-	case m.tvar $ 'DT'
-		vc = ["]+ttoc(m.valor,3)+[Z"]
-	case mustEncode(m.valor)
-		vc = ["]+escapeandencode(m.valor)+["]
-	case m.tvar $ 'CVM'
-		vc = ["]+rtrim(m.valor)+["]
-	case m.tvar $ 'GQW'
-		vc = ["]+strconv(m.valor,13)+["]
-	endcase
-
-	return m.vc
-
-endif
-
-*-----------------------------------
-FUNCTION mustEncode(valor)
-*-----------------------------------
-RETURN len(chrtran(m.valor,specialChars,'')) <> len(m.valor)  
-
-*-------------------------------
-function escapeandencode(valun)
-*-------------------------------
-valun = strtran(m.valun,'\','\\')
-valun = strtran(m.valun,'"','\"')
-*valun = Strtran(m.valun,'/','\/')
-
-IF !mustEncode(m.valun)
-	RETURN
-ENDIF
-
-valun = strtran(m.valun,chr(127),'\b')
-valun = strtran(m.valun,chr(12),'\f')
-valun = strtran(m.valun,chr(10),'\n')
-valun = strtran(m.valun,chr(13),'\r')
-valun = strtran(m.valun,chr(9),'\t')
-
-IF !mustEncode(m.valun)
-	RETURN
-ENDIF
-
-LOCAL x
-FOR x = 0 TO 31
-	valun = strtran(m.valun,chr(m.x),'\u'+RIGHT(TRANSFORM(m.x,'@0'),4))
-ENDFOR
-
-return RTRIM(m.valun)
-
-
-
-*---------------------------------------------------------------
-Function procCollection(obt,nonullArrayItems,amembersFlag )
-*---------------------------------------------------------------
-
-local isCollection
-
-With obt
-
-	nm = .Count
-
-	conllave = .Count > 0 And !Empty(.GetKey(1))
-
-	For x1 = 1 To .Count
-
-		If m.conllave
-			elem = Createobject('empty')
-			addproperty(elem,'Key', .GetKey(m.x1) )
-			addproperty(elem,'Value',.Item(m.x1))
-		Else
-			elem = .Item(m.x1)
-		Endif
-
-		este = m.este+Iif(m.x1>1,','+m.xtabs,'')
-
-		If Vartype(m.elem) # 'O'
-		
-			este = m.este+Concatval(m.elem)
-
-		else
-
-			if vartype( m.elem.baseclass ) = 'C' and m.elem.baseclass = 'Collection'
-				isCollection = .t.
-			else
-				isCollection = .f.
-				m.este = m.este+'{'
-			endif
-
-			este = m.este+procObject(m.elem, m.isCollection , m.noNullArrayItem, m.aMembersFlag )
-		
-			IF !m.isCollection 
-				este = m.este+'}'
+	IF ISNULL(m.obt)
+		RETURN 'null'
+	ENDIF
+	PRIVATE ALL EXCEPT _indentation
+	cCurrent = ''
+	xtabs = indent(2)
+	bc = IIF(TYPE('m.obt.baseclass')='C', m.obt.BASECLASS, '?')
+	isCollection =  bc = 'Collection'
+	IF m.isCollection
+		cCurrent = m.cCurrent + '[' + m.xtabs
+		fromCollection(obt, m.nonullarrayitem, m.aMembersFlag)
+		cCurrent  = m.cCurrent + m.xtabs + ']'
+	ELSE
+		AMEMBERS(am, m.obt, 0, m.aMembersFlag)
+		IF VARTYPE(m.am) = 'U'
+			xtabs = m.indent(-2)
+			RETURN ''
+		ENDIF
+
+		nm = ALEN(am)
+		FOR x1 = 1 TO m.nm
+			VAR = LOWER(am(m.x1))
+			cCurrent = m.cCurrent + IIF(m.x1>1, ', ', '') + m.xtabs
+			cCurrent = m.cCurrent + ["] + STRTRAN(m.var, '_vfpsafe_', '') + [":]
+			isObject = TYPE('m.obt.&Var')='O'
+			IF TYPE('m.obt.&var') = 'U'
+				cCurrent = m.cCurrent + ["unable to evaluate expression"]
+				LOOP
 			ENDIF
+			isArray  = TYPE('m.obt.&Var', 1) = 'A'
+			DO CASE
+				CASE m.isArray
+					fromArray(m.obt, m.var, m.nonullarrayitem)
+				CASE m.isObject
+					thiso = m.obt.&VAR
+					bc = IIF(TYPE('m.thiso.baseclass')='C', m.thiso.BASECLASS, '?')
+					IF bc = 'Collection'
+						cCurrent =  m.cCurrent + fromObject(m.obt.&VAR, .T., m.nonullarrayitem, m.aMembersFlag)
+					ELSE
+						cCurrent =  m.cCurrent + [{] + fromObject(m.obt.&VAR, .F., m.nonullarrayitem, m.aMembersFlag) + [}]
+					ENDIF
+				OTHERWISE
 
-		Endif
+					cCurrent = m.cCurrent + toJsonValue(m.obt.&VAR)
+			ENDCASE
+		ENDFOR
+	ENDIF
+	xtabs = indent(-2)
+	cCurrent  = m.cCurrent + m.xtabs
 
-	endfor
-	
-	este = rtrim(m.este,1,m.xTabs)
+	RETURN m.cCurrent
+ENDFUNC
 
-Endwith
+*----------------------------------------------------
+FUNCTION fromArray(obt, arrayName, nonullarrayitem)
+*----------------------------------------------------
+	nrows = ALEN(m.obt.&arrayName, 1)
+	ncols = ALEN(m.obt.&arrayName, 2)
+	bidim = m.ncols > 0
+	ncols = IIF(m.ncols = 0, m.nrows, m.ncols)
+	titems = ALEN(m.obt.&arrayName)
+	xtabs = indent(2)
+	cCurrent = m.cCurrent + '[' + m.xtabs
+	nelem = 1
+	DO WHILE m.nelem <= m.titems
+		cCurrent = m.cCurrent + IIF(m.nelem>1, ', ' + m.xtabs, '')
+		IF m.bidim
+			xtabs = indent(2)
+			cCurrent = m.cCurrent + '[' + m.xtabs
+		ENDIF
+		FOR pn = m.nelem TO m.nelem + m.ncols-1
+			elem = m.obt.&arrayName(m.pn)
+			cCurrent = m.cCurrent + IIF(m.pn>m.nelem, ', ' + m.xtabs, '')
+			IF VARTYPE(m.elem) # 'O'
+				IF m.nelem + m.ncols-1 = 1 AND ISNULL(m.elem) AND m.nonullarrayitem
+					cCurrent = m.cCurrent + ""
+				ELSE
+					cCurrent = m.cCurrent + toJsonValue(m.elem)
+				ENDIF
+			ELSE
+				bc = IIF(TYPE('m.elem.baseclass')='C', m.elem.BASECLASS, '?')
+				IF bc = 'Collection'
+					cCurrent =  m.cCurrent + fromObject(m.elem ,.T., m.nonullarrayitem, m.aMembersFlag)
+				ELSE
+					cCurrent =  m.cCurrent + [{] + fromObject(m.elem ,.F., m.nonullarrayitem, m.aMembersFlag) + [}]
+				ENDIF
+			ENDIF
+		ENDFOR
+		nelem = m.pn
+		IF m.bidim
+			xtabs = indent(-2)
+			cCurrent = m.cCurrent + m.xtabs + ']'
+		ENDIF
+	ENDDO
+
+	xtabs = indent(-2)
+	cCurrent = m.cCurrent + m.xtabs + ']'
+ENDFUNC
+
+*---------------------------------------------------------------
+FUNCTION fromCollection(obt, nonullArrayItems, aMembersFlag)
+*---------------------------------------------------------------
+	LOCAL isCollection
+	WITH obt
+		nm = .COUNT
+		isKeyValue = .COUNT > 0 AND !EMPTY(.GETKEY(1))
+		FOR x1 = 1 TO .COUNT
+			IF m.isKeyValue
+				elem = CREATEOBJECT('empty')
+				ADDPROPERTY(elem, 'Key', .GETKEY(m.x1))
+				ADDPROPERTY(elem, 'Value', .ITEM(m.x1))
+			ELSE
+				elem = .ITEM(m.x1)
+			ENDIF
+			cCurrent = m.cCurrent + IIF(m.x1>1, ', ' + m.xtabs, '')
+			IF VARTYPE(m.elem) # 'O'
+				cCurrent = m.cCurrent + toJsonValue(m.elem)
+			ELSE
+				IF VARTYPE(m.elem.BASECLASS) = 'C' AND m.elem.BASECLASS = 'Collection'
+					isCollection = .T.
+				ELSE
+					isCollection = .F.
+					m.cCurrent = m.cCurrent + '{'
+				ENDIF
+				cCurrent = m.cCurrent + fromObject(m.elem, m.isCollection , m.nonullarrayitem, m.aMembersFlag)
+				IF !m.isCollection
+					cCurrent = m.cCurrent + '}'
+				ENDIF
+			ENDIF
+		ENDFOR
+		cCurrent = RTRIM(m.cCurrent, 1, m.xtabs)
+	ENDWITH
+ENDFUNC
+
+*-----------------------------
+FUNCTION indent(nLength)
+*-----------------------------
+	IF m._indentation = -1
+		RETURN ''
+	ELSE
+		_indentation= m._indentation + m.nLength
+		RETURN crlf + REPLICATE(PAD_SEQUENCE, m._indentation)
+	ENDIF
+ENDFUNC
+
+*-----------------------------
+FUNCTION toJsonValue(eValue)
+*-----------------------------
+	IF ISNULL(m.eValue)
+		RETURN 'null'
+	ELSE
+		tvar = VARTYPE(m.eValue)
+		** do NOT change the order!
+		DO CASE
+			CASE m.tvar $ 'FBYINQ'
+				vc = RTRIM(CAST(m.eValue AS c(32)))
+			CASE m.tvar = 'L'
+				vc = IIF(m.eValue, 'true', 'false')
+			CASE m.tvar $ 'DT'
+				vc = ["] + TTOC(m.eValue, 3) + [Z"]
+			CASE mustEncode(m.eValue)
+				vc = ["] + escapeandencode(m.eValue) + ["]
+			CASE m.tvar $ 'CVM'
+				vc = ["] + m.eValue + ["] && Don't RTRIM "excess" space.
+			CASE m.tvar $ 'GQW'
+				vc = ["] + STRCONV(m.eValue, 13) + ["]
+		ENDCASE
+		RETURN m.vc
+	ENDIF
+ENDFUNC
+
+*-----------------------------------
+FUNCTION mustEncode(eValue)
+*-----------------------------------
+	RETURN LEN(CHRTRAN(m.eValue, specialChars, '')) <> LEN(m.eValue)
+ENDFUNC
+
+*-------------------------------
+FUNCTION escapeandencode(cValue)
+*-------------------------------
+	cValue = STRTRAN(m.cValue, '\', '\\')
+	cValue = STRTRAN(m.cValue, '"', '\"')
+	*cValue = Strtran(m.cValue, '/', '\/')
+	IF !mustEncode(m.cValue) && optimize perf.
+		RETURN
+	ENDIF
+	cValue = STRTRAN(m.cValue, CHR(127), '\b')
+	cValue = STRTRAN(m.cValue, CHR(12), '\f')
+	cValue = STRTRAN(m.cValue, CHR(10), '\n')
+	cValue = STRTRAN(m.cValue, CHR(13), '\r')
+	cValue = STRTRAN(m.cValue, CHR(9), '\t')
+	IF !mustEncode(m.cValue)
+		RETURN
+	ENDIF
+	LOCAL x
+	FOR x = 0 TO 31
+		cValue = STRTRAN(m.cValue, CHR(m.x), '\u' + RIGHT(TRANSFORM(m.x, '@0'), 4))
+	ENDFOR
+	RETURN RTRIM(m.cValue)
+ENDFUNC
