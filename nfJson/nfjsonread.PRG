@@ -54,7 +54,7 @@ FUNCTION nfjsonread2(cjsonstr)
 				procstring(m.ojson)
 			CASE aj(1) = '['
 				x = 0
-				procstring(m.ojson,.T.)
+				procstring(@m.ojson,.T.)
 			OTHERWISE
 				ERROR ' expecting [{  got '+m.pchar
 		ENDCASE
@@ -133,7 +133,7 @@ PROCEDURE procstring(obj,evalue)
 				IF m.expecting == '[' AND m.aj(m.x) # '['
 					ERROR 'expecting [ got '+aj(m.x)
 				ELSE
-					procvalue(m.obj)
+					procvalue(@m.obj)
 				ENDIF
 		ENDCASE
 	ENDDO
@@ -143,9 +143,16 @@ ENDPROC
 FUNCTION anuevoel(obj,arrayname,valasig,bidim,colpos,rowpos)
 *-----------------------------------------------------------------------------
 	rowpos = m.rowpos+1
-	obj.&arrayname..ADD(m.valasig)
-	IF VARTYPE(m.valasig) = 'O'
-		procstring(obj.&arrayname..ITEM(m.rowpos))
+	IF arrayname == "*" && Special case for root array
+		obj.ADD(m.valasig)
+		IF VARTYPE(m.valasig) = 'O'
+			procstring(m.obj.ITEM(m.rowpos))
+		ENDIF
+	ELSE
+		obj.&arrayname..ADD(m.valasig)
+		IF VARTYPE(m.valasig) = 'O'
+			procstring(obj.&arrayname..ITEM(m.rowpos))
+		ENDIF
 	ENDIF
 	
 *-----------------------------------------
@@ -238,17 +245,20 @@ PROCEDURE procvalue(obj)
 			ostack.pusharray()
 			DO CASE
 				CASE m.arraylevel = 0
-					arrayname = EVL(m.vari,"array")
+					arrayname = EVL(m.vari,"*")
 					rowpos = 0
 					colpos = 0
 					bidim = .F.
-					
-					TRY
-						ADDPROPERTY(obj,(m.arrayname),CREATEOBJECT("Collection"))
-					CATCH
-						m.arrayname = m.arrayname+'_vfpSafe_'
-						ADDPROPERTY(obj,(m.arrayname),CREATEOBJECT("Collection"))
-					ENDTRY	
+					IF arrayname = "*"
+						obj = CREATEOBJECT("Collection")
+					ELSE
+						TRY
+							ADDPROPERTY(obj,(m.arrayname),CREATEOBJECT("Collection"))
+						CATCH
+							m.arrayname = m.arrayname+'_vfpSafe_'
+							ADDPROPERTY(obj,(m.arrayname),CREATEOBJECT("Collection"))
+						ENDTRY				
+					ENDIF
 				CASE m.arraylevel = 1 AND !m.bidim
 					rowpos = 1
 					colpos = 0
