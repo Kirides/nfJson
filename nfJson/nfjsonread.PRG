@@ -1,635 +1,451 @@
 *-------------------------------------------------------------------
 * Created by Marco Plaza , 2013-2017 @nfTools
 *-------------------------------------------------------------------
-lparameters cjsonstr
+#DEFINE crlf CHR(13)+CHR(10)
 
-#define crlf chr(13)+chr(10)
+LPARAMETERS cjsonstr
+PRIVATE ALL
 
-private all
-
-stacklevels=astackinfo(aerrs)
-
-if m.stacklevels > 1
-	calledfrom = ' ( called From '+aerrs(m.stacklevels-1,4)+' line '+transform(aerrs(m.stacklevels-1,5))+')'
-else
+stacklevels=ASTACKINFO(aerrs)
+IF m.stacklevels > 1
+	calledfrom = ' ( called From '+aerrs(m.stacklevels-1,4)+' line '+TRANSFORM(aerrs(m.stacklevels-1,5))+')'
+ELSE
 	calledfrom = ''
-endif
-
-
-try
-
+ENDIF
+TRY
 	cerror = ''
-	if not left(ltrim(cjsonstr),1)  $ '{['  and file(m.cjsonstr)
-		cjsonstr = filetostr(m.cjsonstr)
-	endif
-
-	ost = set('strictdate')
-	set strictdate to 0
+	IF NOT LEFT(LTRIM(cjsonstr),1)  $ '{['  AND FILE(m.cjsonstr)
+		cjsonstr = FILETOSTR(m.cjsonstr)
+	ENDIF
+	ost = SET('strictdate')
+	SET STRICTDATE TO 0
 	ojson = nfjsonread2(m.cjsonstr)
-	set strictdate to (m.ost)
-
-catch to oerr1
-	cerror = 'nfJson '+m.calledfrom+crlf+m.oerr1.message
-
-endtry
-
-if !empty(m.cerror)
-	error m.cerror
-	return .null.
-endif
-
-return iif(vartype(m.ojson)='O',m.ojson,.null.)
-
+	SET STRICTDATE TO (m.ost)
+CATCH TO oerr1
+	cerror = 'nfJson '+m.calledfrom+crlf+m.oerr1.MESSAGE
+ENDTRY
+IF !EMPTY(m.cerror)
+	ERROR m.cerror
+	RETURN .NULL.
+ENDIF
+RETURN IIF(VARTYPE(m.ojson)='O',m.ojson,.NULL.)
 
 *-------------------------------------------------------------------------
-function nfjsonread2(cjsonstr)
+FUNCTION nfjsonread2(cjsonstr)
 *-------------------------------------------------------------------------
-
-
-try
-
-	x = 1
-	cerror = ''
-
-* process json:
-
-	cjson = rtrim(chrtran(m.cjsonstr,chr(13)+chr(9)+chr(10),''))
-	pchar = left(ltrim(m.cjson),1)
-
-
-	nl = alines(aj,m.cjson,20,'{','}','"',',',':','[',']','\\')
-
-	for xx = 1 to alen(aj)
-		if left(ltrim(aj(m.xx)),1) $ '{}",:[]'  or lower(left(ltrim(m.aj(m.xx)),4)) $ 'true/false/null'
-			aj(m.xx) = ltrim(aj(m.xx))
-		endif
-	endfor
-
-	ostack = createobject('stack')
-
-	ojson = createobject('empty')
-
-	do case
-	case  aj(1)='{'
+	TRY
 		x = 1
-		ostack.pushobject()
-		procstring(m.ojson)
-
-	case aj(1) = '['
-		x = 0
-		procstring(m.ojson,.t.)
-
-	otherwise
-		error ' expecting [{  got '+m.pchar
-
-	endcase
-
-
-
-catch to oerr
-
-	strp = ''
-
-	for y = 1 to m.x
-		strp = m.strp+aj(m.y)
-	endfor
-
-	do case
-	case oerr.errorno = 1098
-
-		cerror = ' Invalid Json: '+ m.oerr.message+crlf+' Parsing: '+right(m.strp,80)
-
-	otherwise
-
-		cerror = ' program error # '+transform(m.oerr.errorno)+crlf+m.oerr.message+' at line: '+transform(oerr.lineno)+crlf+' Parsing: '+right(m.strp,80)
-
-	endcase
-
-endtry
-
-if !empty(m.cerror)
-	error m.cerror
-endif
-
-return m.ojson
+		cerror = ''
+* process json:
+		cjson = RTRIM(CHRTRAN(m.cjsonstr,CHR(13)+CHR(9)+CHR(10),''))
+		pchar = LEFT(LTRIM(m.cjson),1)
+		nl = ALINES(aj,m.cjson,20,'{','}','"',',',':','[',']','\\')
+		FOR xx = 1 TO ALEN(aj)
+			IF LEFT(LTRIM(aj(m.xx)),1) $ '{}",:[]'  OR LOWER(LEFT(LTRIM(m.aj(m.xx)),4)) $ 'true/false/null'
+				aj(m.xx) = LTRIM(aj(m.xx))
+			ENDIF
+		ENDFOR
+		ostack = CREATEOBJECT('stack')
+		ojson = CREATEOBJECT('empty')
+		DO CASE
+			CASE  aj(1)='{'
+				x = 1
+				ostack.pushobject()
+				procstring(m.ojson)
+			CASE aj(1) = '['
+				x = 0
+				procstring(m.ojson,.T.)
+			OTHERWISE
+				ERROR ' expecting [{  got '+m.pchar
+		ENDCASE
+	CATCH TO oerr
+		strp = ''
+		FOR Y = 1 TO m.x
+			strp = m.strp+aj(m.y)
+		ENDFOR
+		DO CASE
+			CASE oerr.ERRORNO = 1098
+				cerror = ' Invalid Json: '+ m.oerr.MESSAGE+crlf+' Parsing: '+RIGHT(m.strp,80)
+			OTHERWISE
+				cerror = ' program error # '+TRANSFORM(m.oerr.ERRORNO)+crlf+m.oerr.MESSAGE+' at line: '+TRANSFORM(oerr.LINENO)+crlf+' Parsing: '+RIGHT(m.strp,80)
+		ENDCASE
+	ENDTRY
+	IF !EMPTY(m.cerror)
+		ERROR m.cerror
+	ENDIF
+	RETURN m.ojson
+ENDFUNC
 
 *--------------------------------------------------------------------------------
-procedure procstring(obj,evalue)
+PROCEDURE procstring(obj,evalue)
 *--------------------------------------------------------------------------------
-#define cvalid 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890_'
-#define creem  '_______________________________________________________________'
-
-private rowpos,colpos,bidim,ncols,arrayname,expecting,arraylevel,vari
-private expectingpropertyname,expectingvalue,objectopen
-
-expectingpropertyname = !m.evalue
-expectingvalue = m.evalue
-expecting = iif(expectingpropertyname,'"}','')
-objectopen = .t.
-bidim = .f.
-colpos = 0
-rowpos = 0
-arraylevel = 0
-arrayname = ''
-vari = ''
-ncols = 0
-
-do while m.objectopen
-
-	x = m.x+1
-
-	do case
-
-	case m.x > m.nl
-
-		m.x = m.nl
-
-		if ostack.count > 0
-			error 'expecting '+m.expecting
-		endif
-
-		return
-
-	case aj(m.x) = '}' and '}' $ m.expecting
-		closeobject()
-
-	case aj(x) = ']' and ']' $ m.expecting
-		closearray()
-
-	case  m.expecting = ':'
-		if aj(m.x) = ':'
-			expecting = ''
-			loop
-		else
-			error 'expecting : got '+aj(m.x)
-		endif
-
-	case ',' $ m.expecting
-
-		do case
-		case aj(x) = ','
-			expecting = iif( '[' $ m.expecting , '[' , '' )
-		case not aj(m.x) $ m.expecting
-			error 'expecting '+m.expecting+' got '+aj(m.x)
-		otherwise
-			expecting = strtran(m.expecting,',','')
-		endcase
-
-
-	case m.expectingpropertyname
-
-		if aj(m.x) = '"'
-			propertyname(m.obj)
-		else
-			error 'expecting "'+m.expecting+' got '+aj(m.x)
-		endif
-
-
-	case m.expectingvalue
-
-		if m.expecting == '[' and m.aj(m.x) # '['
-			error 'expecting [ got '+aj(m.x)
-		else
-			procvalue(m.obj)
-		endif
-
-
-	endcase
-
-
-enddo
-
-
-*-----------------------------------------------------------------------------
-function anuevoel(obj,arrayname,valasig,bidim,colpos,rowpos)
-*-----------------------------------------------------------------------------
-
-
-rowpos = m.rowpos+1
-
-obj.&arrayname..Add(m.valasig)
-
-if vartype(m.valasig) = 'O'
-	procstring(obj.&arrayname..Item(m.rowpos))
-endif
-
-
-*-----------------------------------------
-function unescunicode( cstr )
-*-----------------------------------------
-
-private all
-
-ust = ''
-
-for x = 1 to alines(xstr,m.cstr,18,'\u','\\u')
-
-	if right(xstr(m.x),3) # '\\u' and right(xstr(m.x),2) = '\u'
-
-		ust = m.ust + rtrim(xstr(M.x),0,'\u')
-
-		dec = val( "0x"+left(xstr(m.x+1),4))
-		ansi = strconv( bintoc( m.dec  , "2RS" ) ,6 )
-
-		if m.ansi = '?'
-			ust = m.ust + '&#'+transform(m.dec)
-		else
-			ust = m.ust + m.ansi
-		endif
-
-		xstr(m.x+1) = substr(xstr(m.x+1),5)
-
-	else
-
-		ust = m.ust + xstr(m.x)
-
-	endif
-
-endfor
-
-cstr = m.ust
-
-*-----------------------------------
-function unescapecontrolc( value )
-*-----------------------------------
-
-if at('\', m.value) = 0
-	return
-endif
-
-* unescape special characters:
-
-private aa,elem,unesc
-
-
-declare aa(1)
-=alines(m.aa,m.value,18,'\\','\b','\f','\n','\r','\t','\"','\/')
-
-unesc =''
-
-#define sustb 'bnrt/"'
-#define sustr chr(127)+chr(10)+chr(13)+chr(9)+chr(47)+chr(34)
-
-for each elem in m.aa
-
-	if ! m.elem == '\\' and left(right(m.elem,2),1) = '\'
-		elem = left(m.elem,len(m.elem)-2)+chrtran(right(m.elem,1),sustb,sustr)
-	endif
-
-	unesc = m.unesc+m.elem
-
-endfor
-
-value = m.unesc
-
-*--------------------------------------------
-procedure propertyname(obj)
-*--------------------------------------------
-
-x = m.x+1
-vari = aj(m.x)
-
-do while right(aj(m.x),1) # '"' and m.x < alen(m.aj)
-	x=m.x+1
-	vari = m.vari + aj(m.x)
-enddo
-
-if right(m.aj(m.x),1) # '"'
-	error ' expecting "  got  '+ m.aj(m.x)
-endif
-
-vari = rtrim(m.vari,1,'"')
-vari = iif(isalpha(m.vari),'','_')+m.vari
-vari = chrtran( vari, chrtran( vari, cvalid,'' ) , creem )
-
-if vari == 'tabindex'
-	vari = '_tabindex'
-endif
-
-expecting = ':'
-expectingvalue = .t.
-expectingpropertyname = .f.
-
-
-*-------------------------------------------------------------
-procedure procvalue(obj)
-*-------------------------------------------------------------
-
-do case
-case aj(m.x) = '{'
-
-	ostack.pushobject()
-
-	if m.arraylevel = 0
-
-		addproperty(obj,m.vari,createobject('empty'))
-
-		procstring(obj.&vari)
-		expectingpropertyname = .t.
-		expecting = ',}'
-		expectingvalue = .f.
-
-	else
-
-		anuevoel(m.obj,m.arrayname,createobject('empty'),m.bidim,@m.colpos,@m.rowpos)
-		expectingpropertyname = .f.
-		expecting = ',]'
-		expectingvalue = .t.
-
-	endif
-
-
-case  aj(x) = '['
-
-	ostack.pusharray()
-
-	do case
-
-	case m.arraylevel = 0
-
-		arrayname = evl(m.vari,'array')
-		rowpos = 0
-		colpos = 0
-		bidim = .f.
-
-
-		try
-			addproperty(obj,(m.arrayname),CREATEOBJECT("Collection"))
-		catch
-			m.arrayname = m.arrayname+'_vfpSafe_'
-			addproperty(obj,(m.arrayname),CREATEOBJECT("Collection"))
-		endtry
-
-
-	case m.arraylevel = 1 and !m.bidim
-
-		rowpos = 1
-		colpos = 0
-		ncols = 1
-
-		bidim = .t.
-
-	endcase
-
-	arraylevel = m.arraylevel+1
-
-	vari=''
-
-	expecting = iif(!m.bidim,'[]{',']')
-	expectingvalue = .t.
-	expectingpropertyname = .f.
-
-otherwise
-
-	isstring = aj(m.x)='"'
-	x = m.x + iif(m.isstring,1,0)
-
-	value = ''
-
-	do while m.x <= alen(m.aj)
-		value = m.value + aj(m.x)
-		if  ( ( m.isstring and right(aj(m.x),1) = '"' ) or (!m.isstring and right(aj(m.x),1) $ '}],') ) and left(right(aj(m.x),2),1) # '\'
-			exit
-		endif
+	#DEFINE cvalid 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890_'
+	#DEFINE creem  '_______________________________________________________________'
+	PRIVATE rowpos,colpos,bidim,ncols,arrayname,expecting,arraylevel,vari
+	PRIVATE expectingpropertyname,expectingvalue,objectopen
+	expectingpropertyname = !m.evalue
+	expectingvalue = m.evalue
+	expecting = IIF(expectingpropertyname,'"}','')
+	objectopen = .T.
+	bidim = .F.
+	colpos = 0
+	rowpos = 0
+	arraylevel = 0
+	arrayname = ''
+	vari = ''
+	ncols = 0
+	DO WHILE m.objectopen
 		x = m.x+1
-	enddo
+		DO CASE
+			CASE m.x > m.nl
+				m.x = m.nl
+				IF ostack.COUNT > 0
+					ERROR 'expecting '+m.expecting
+				ENDIF
+				RETURN
+			CASE aj(m.x) = '}' AND '}' $ m.expecting
+				closeobject()
+			CASE aj(x) = ']' AND ']' $ m.expecting
+				closearray()
+			CASE  m.expecting = ':'
+				IF aj(m.x) = ':'
+					expecting = ''
+					LOOP
+				ELSE
+					ERROR 'expecting : got '+aj(m.x)
+				ENDIF
+			CASE ',' $ m.expecting
+				DO CASE
+					CASE aj(x) = ','
+						expecting = IIF( '[' $ m.expecting , '[' , '' )
+					CASE NOT aj(m.x) $ m.expecting
+						ERROR 'expecting '+m.expecting+' got '+aj(m.x)
+					OTHERWISE
+						expecting = STRTRAN(m.expecting,',','')
+				ENDCASE
+			CASE m.expectingpropertyname
+				IF aj(m.x) = '"'
+					propertyname(m.obj)
+				ELSE
+					ERROR 'expecting "'+m.expecting+' got '+aj(m.x)
+				ENDIF
+			CASE m.expectingvalue
+				IF m.expecting == '[' AND m.aj(m.x) # '['
+					ERROR 'expecting [ got '+aj(m.x)
+				ELSE
+					procvalue(m.obj)
+				ENDIF
+		ENDCASE
+	ENDDO
+ENDPROC
 
-	closechar = right(aj(m.x),1)
+*-----------------------------------------------------------------------------
+FUNCTION anuevoel(obj,arrayname,valasig,bidim,colpos,rowpos)
+*-----------------------------------------------------------------------------
+	rowpos = m.rowpos+1
+	obj.&arrayname..ADD(m.valasig)
+	IF VARTYPE(m.valasig) = 'O'
+		procstring(obj.&arrayname..ITEM(m.rowpos))
+	ENDIF
+	
+*-----------------------------------------
+FUNCTION unescunicode( cstr )
+*-----------------------------------------
+	PRIVATE ALL
+	ust = ''
+	FOR x = 1 TO ALINES(xstr,m.cstr,18,'\u','\\u')
+		IF RIGHT(xstr(m.x),3) # '\\u' AND RIGHT(xstr(m.x),2) = '\u'
+			ust = m.ust + RTRIM(xstr(M.x),0,'\u')
+			dec = VAL( "0x"+LEFT(xstr(m.x+1),4))
+			ANSI = STRCONV( BINTOC( m.dec  , "2RS" ) ,6 )
+			IF m.ansi = '?'
+				ust = m.ust + '&#'+TRANSFORM(m.dec)
+			ELSE
+				ust = m.ust + m.ansi
+			ENDIF
+			xstr(m.x+1) = SUBSTR(xstr(m.x+1),5)
+		ELSE
+			ust = m.ust + xstr(m.x)
+		ENDIF
+	ENDFOR
+	cstr = m.ust
+ENDFUNC
 
-	value = left(m.value,len(m.value)-1)
+*-----------------------------------
+FUNCTION unescapecontrolc( VALUE )
+*-----------------------------------
+	IF AT('\', m.value) = 0
+		RETURN
+	ENDIF
+* unescape special characters:
+	PRIVATE aa,elem,unesc
+	DECLARE aa(1)
+	=ALINES(m.aa,m.value,18,'\\','\b','\f','\n','\r','\t','\"','\/')
+	unesc =''
+	#DEFINE sustb 'bnrt/"'
+	#DEFINE sustr CHR(127)+CHR(10)+CHR(13)+CHR(9)+CHR(47)+CHR(34)
+	FOR EACH elem IN m.aa
+		IF ! m.elem == '\\' AND LEFT(RIGHT(m.elem,2),1) = '\'
+			elem = LEFT(m.elem,LEN(m.elem)-2)+CHRTRAN(RIGHT(m.elem,1),sustb,sustr)
+		ENDIF
+		unesc = m.unesc+m.elem
+	ENDFOR
+	VALUE = m.unesc
+ENDFUNC
 
-	do case
+*--------------------------------------------
+FUNCTION propertyname(obj)
+*--------------------------------------------
+	x = m.x+1
+	vari = aj(m.x)
+	DO WHILE RIGHT(aj(m.x),1) # '"' AND m.x < ALEN(m.aj)
+		x=m.x+1
+		vari = m.vari + aj(m.x)
+	ENDDO
+	IF RIGHT(m.aj(m.x),1) # '"'
+		ERROR ' expecting "  got  '+ m.aj(m.x)
+	ENDIF
+	vari = RTRIM(m.vari,1,'"')
+	vari = IIF(ISALPHA(m.vari),'','_')+m.vari
+	vari = CHRTRAN( vari, CHRTRAN( vari, cvalid,'' ) , creem )
+	IF vari == 'tabindex'
+		vari = '_tabindex'
+	ENDIF
+	expecting = ':'
+	expectingvalue = .T.
+	expectingpropertyname = .F.
+ENDFUNC
 
-	case empty(m.value) and  not ( m.isstring and m.closechar = '"'  )
-		error 'Expecting value got '+m.closechar
-
-	case  m.isstring
-		if m.closechar # '"'
-			error 'expecting " got '+m.closechar
-		endif
-
-	case ostack.isobject() and not m.closechar $ ',}'
-		error 'expecting ,} got '+m.closechar
-
-	case ostack.isarray() and  not m.closechar $ ',]'
-		error 'expecting ,] got '+m.closechar
-
-	endcase
-
-
-
-	if m.isstring
-
+*-------------------------------------------------------------
+PROCEDURE procvalue(obj)
+*-------------------------------------------------------------
+	DO CASE
+		CASE aj(m.x) = '{'
+			ostack.pushobject()
+			IF m.arraylevel = 0
+				ADDPROPERTY(obj,m.vari,CREATEOBJECT('empty'))
+				procstring(obj.&vari)
+				expectingpropertyname = .T.
+				expecting = ',}'
+				expectingvalue = .F.
+			ELSE
+				anuevoel(m.obj,m.arrayname,CREATEOBJECT('empty'),m.bidim,@m.colpos,@m.rowpos)
+				expectingpropertyname = .F.
+				expecting = ',]'
+				expectingvalue = .T.
+			ENDIF
+		CASE  aj(x) = '['
+			ostack.pusharray()
+			DO CASE
+				CASE m.arraylevel = 0
+					arrayname = EVL(m.vari,"array")
+					rowpos = 0
+					colpos = 0
+					bidim = .F.
+					
+					TRY
+						ADDPROPERTY(obj,(m.arrayname),CREATEOBJECT("Collection"))
+					CATCH
+						m.arrayname = m.arrayname+'_vfpSafe_'
+						ADDPROPERTY(obj,(m.arrayname),CREATEOBJECT("Collection"))
+					ENDTRY	
+				CASE m.arraylevel = 1 AND !m.bidim
+					rowpos = 1
+					colpos = 0
+					ncols = 1
+					bidim = .T.
+			ENDCASE
+			arraylevel = m.arraylevel+1
+			vari=''
+			expecting = IIF(!m.bidim,'[]{',']')
+			expectingvalue = .T.
+			expectingpropertyname = .F.
+		OTHERWISE
+			isstring = aj(m.x)='"'
+			x = m.x + IIF(m.isstring,1,0)
+			VALUE = ''
+			DO WHILE m.x <= ALEN(m.aj)
+				VALUE = m.value + aj(m.x)
+				IF  ( ( m.isstring AND RIGHT(aj(m.x),1) = '"' ) OR (!m.isstring AND RIGHT(aj(m.x),1) $ '}],') ) AND LEFT(RIGHT(aj(m.x),2),1) # '\'
+					EXIT
+				ENDIF
+				x = m.x+1
+			ENDDO
+			closechar = RIGHT(aj(m.x),1)
+			VALUE = LEFT(m.value,LEN(m.value)-1)
+			DO CASE
+				CASE EMPTY(m.value) AND  NOT ( m.isstring AND m.closechar = '"'  )
+					ERROR 'Expecting value got '+m.closechar
+				CASE  m.isstring
+					IF m.closechar # '"'
+						ERROR 'expecting " got '+m.closechar
+					ENDIF
+				CASE ostack.isobject() AND NOT m.closechar $ ',}'
+					ERROR 'expecting ,} got '+m.closechar
+				CASE ostack.isarray() AND  NOT m.closechar $ ',]'
+					ERROR 'expecting ,] got '+m.closechar
+			ENDCASE
+			IF m.isstring
 * don't change this lines sequence!:
-		unescunicode(@m.value)  && 1
-		unescapecontrolc(@m.value)  && 2
-		value = strtran(m.value,'\\','\')  && 3
-
+				unescunicode(@m.value)  && 1
+				unescapecontrolc(@m.value)  && 2
+				VALUE = STRTRAN(m.value,'\\','\')  && 3
 ** check for Json DateTime: && 2017-03-10T17:43:55
 * proper formatted dates with invalid values will parse as character - eg: {"today":"2017-99-01T15:99:00"}
-
-		if isjsondt( m.value )
-			value = jsondatetodt( m.value )
-		endif
-
-	else
-
-		value = alltrim(m.value)
-
-		do case
-		case lower(m.value) == 'null'
-			value = .null.
-		case lower(m.value) == 'true' or lower(m.value) == 'false'
-			value = m.value='true'
-
-		case empty(chrtran(m.value,'-1234567890.Ee',''))
-
-			try
-				local tvaln,im
-				im = 'tvaln = '+m.value
-				&im
-				value = m.tvaln
-				badnumber = .f.
-			catch
-				badnumber = .t.
-			endtry
-
-			if badnumber
-				error 'bad number format:  got '+aj(m.x)
-			endif
-
-		otherwise
-			error 'expecting "|number|null|true|false|  got '+aj(m.x)
-		endcase
-
-
-	endif
-
-
-	if m.arraylevel = 0
-
-
-		addproperty(obj,m.vari,m.value)
-
-		expecting = '}'
-		expectingvalue = .f.
-		expectingpropertyname = .t.
-
-	else
-
-		anuevoel(obj,m.arrayname,m.value,m.bidim,@m.colpos,@m.rowpos)
-		expecting = ']'
-		expectingvalue = .t.
-		expectingpropertyname = .f.
-
-	endif
-
-	expecting = iif(m.isstring,',','')+m.expecting
-
-
-	do case
-	case m.closechar = ']'
-		closearray()
-	case m.closechar = '}'
-		closeobject()
-	endcase
-
-endcase
-
-
+				IF isjsondt( m.value )
+					VALUE = jsondatetodt( m.value )
+				ENDIF
+			ELSE
+				VALUE = ALLTRIM(m.value)
+				DO CASE
+					CASE LOWER(m.value) == 'null'
+						VALUE = .NULL.
+					CASE LOWER(m.value) == 'true' OR LOWER(m.value) == 'false'
+						VALUE = m.value='true'
+					CASE EMPTY(CHRTRAN(m.value,'-1234567890.Ee',''))
+						TRY
+							LOCAL tvaln,im
+							im = 'tvaln = '+m.value
+							&im
+							VALUE = m.tvaln
+							badnumber = .F.
+						CATCH
+							badnumber = .T.
+						ENDTRY
+						IF badnumber
+							ERROR 'bad number format:  got '+aj(m.x)
+						ENDIF
+					OTHERWISE
+						ERROR 'expecting "|number|null|true|false|  got '+aj(m.x)
+				ENDCASE
+			ENDIF
+			IF m.arraylevel = 0
+				ADDPROPERTY(obj,m.vari,m.value)
+				expecting = '}'
+				expectingvalue = .F.
+				expectingpropertyname = .T.
+			ELSE
+				anuevoel(obj,m.arrayname,m.value,m.bidim,@m.colpos,@m.rowpos)
+				expecting = ']'
+				expectingvalue = .T.
+				expectingpropertyname = .F.
+			ENDIF
+			expecting = IIF(m.isstring,',','')+m.expecting
+			DO CASE
+				CASE m.closechar = ']'
+					closearray()
+				CASE m.closechar = '}'
+					closeobject()
+			ENDCASE
+	ENDCASE
 *------------------------------
-function closearray()
+FUNCTION closearray()
 *------------------------------
-
-if ostack.pop() # 'A'
-	error 'unexpected ] '
-endif
-
-if m.arraylevel = 0
-	error 'unexpected ] '
-endif
-
-arraylevel = m.arraylevel-1
-
-if m.arraylevel = 0
-
-	arrayname = ''
-	rowpos = 0
-	colpos = 0
-
-	expecting = iif(ostack.isobject(),',}','')
-	expectingpropertyname = .t.
-	expectingvalue = .f.
-
-else
-
-	if  m.bidim
-		rowpos = m.rowpos+1
+	IF ostack.POP() # 'A'
+		ERROR 'unexpected ] '
+	ENDIF
+	IF m.arraylevel = 0
+		ERROR 'unexpected ] '
+	ENDIF
+	arraylevel = m.arraylevel-1
+	IF m.arraylevel = 0
+		arrayname = ''
+		rowpos = 0
 		colpos = 0
-		expecting = ',]['
-	else
+		expecting = IIF(ostack.isobject(),',}','')
+		expectingpropertyname = .T.
+		expectingvalue = .F.
+	ELSE
+		IF  m.bidim
+			rowpos = m.rowpos+1
+			colpos = 0
+			expecting = ',]['
+		ELSE
+			expecting = ',]'
+		ENDIF
+		expectingvalue = .T.
+		expectingpropertyname = .F.
+	ENDIF
+ENDFUNC
+*-------------------------------------
+FUNCTION closeobject()
+*-------------------------------------
+	IF ostack.POP() # 'O'
+		ERROR 'unexpected }'
+	ENDIF
+	IF m.arraylevel = 0
+		expecting = ',}'
+		expectingvalue = .F.
+		expectingpropertyname = .T.
+		objectopen = .F.
+	ELSE
 		expecting = ',]'
-	endif
-
-	expectingvalue = .t.
-	expectingpropertyname = .f.
-
-endif
-
-
-
-*-------------------------------------
-procedure closeobject
-*-------------------------------------
-
-if ostack.pop() # 'O'
-	error 'unexpected }'
-endif
-
-if m.arraylevel = 0
-	expecting = ',}'
-	expectingvalue = .f.
-	expectingpropertyname = .t.
-	objectopen = .f.
-else
-	expecting = ',]'
-	expectingvalue = .t.
-	expectingpropertyname = .f.
-endif
-
-
-
+		expectingvalue = .T.
+		expectingpropertyname = .F.
+	ENDIF
+ENDFUNC
 *----------------------------------
-function isjsondt( cstr )
+FUNCTION isjsondt( cstr )
 *----------------------------------
-
-cstr = rtrim(m.cstr,1,'Z')
-
-return iif( len(m.cstr) = 19 ;
-	and len(chrtran(m.cstr,'01234567890:T-','')) = 0 ;
-	and substr(m.cstr,5,1) = '-' ;
-	and substr(m.cstr,8,1) = '-' ;
-	and substr(m.cstr,11,1) = 'T' ;
-	and substr(m.cstr,14,1) = ':' ;
-	and substr(m.cstr,17,1) = ':' ;
-	and occurs('T',m.cstr) = 1 ;
-	and occurs('-',m.cstr) = 2 ;
-	and occurs(':',m.cstr) = 2 ,.t.,.f. )
-
+	cstr = RTRIM(m.cstr,1,'Z')
+	RETURN IIF( LEN(m.cstr) = 19 ;
+		AND LEN(CHRTRAN(m.cstr,'01234567890:T-','')) = 0 ;
+		AND SUBSTR(m.cstr,5,1) = '-' ;
+		AND SUBSTR(m.cstr,8,1) = '-' ;
+		AND SUBSTR(m.cstr,11,1) = 'T' ;
+		AND SUBSTR(m.cstr,14,1) = ':' ;
+		AND SUBSTR(m.cstr,17,1) = ':' ;
+		AND OCCURS('T',m.cstr) = 1 ;
+		AND OCCURS('-',m.cstr) = 2 ;
+		AND OCCURS(':',m.cstr) = 2 ,.T.,.F. )
+ENDFUNC
 
 *-----------------------------------------------------
-procedure jsondatetodt( cjsondate )
+FUNCTION jsondatetodt( cjsondate )
 *-----------------------------------------------------
-
-cJsonDate = rtrim(m.cJsonDate,1,'Z')
-
-if m.cJsonDate = '0000-00-00T00:00:00'
-
-	return {}
-
-else
-
-	cret = eval('{^'+rtrim(m.cjsondate,1,"T00:00:00")+'}')
-	
-	if !empty(m.cret) 
-		return m.cret
-	else
-		error 'Invalid date '+cJsonDate
-	endif
-
-endif
+	cjsondate = RTRIM(m.cjsondate,1,'Z')
+	IF m.cjsondate = '0000-00-00T00:00:00'
+		RETURN {}
+	ELSE
+		cret = EVAL('{^'+RTRIM(m.cjsondate,1,"T00:00:00")+'}')
+		IF !EMPTY(m.cret)
+			RETURN m.cret
+		ELSE
+			ERROR 'Invalid date '+cjsondate
+		ENDIF
+	ENDIF
+ENDFUNC
 
 ******************************************
-define class stack as collection
+DEFINE CLASS STACK AS COLLECTION
 ******************************************
-
 *---------------------------
-	function pushobject()
+	FUNCTION pushobject()
 *---------------------------
-	this.add('O')
-
+		THIS.ADD('O')
+	ENDFUNC
 *---------------------------
-	function pusharray()
+	FUNCTION pusharray()
 *---------------------------
-	this.add('A')
-
+		THIS.ADD('A')
+	ENDFUNC
 *--------------------------------------
-	function isobject()
+	FUNCTION isobject()
 *--------------------------------------
-	return this.count > 0 and this.item( this.count ) = 'O'
-
+		RETURN THIS.COUNT > 0 AND THIS.ITEM( THIS.COUNT ) = 'O'
+	ENDFUNC
 *--------------------------------------
-	function isarray()
+	FUNCTION isarray()
 *--------------------------------------
-	return this.count > 0 and this.item( this.count ) = 'A'
-
+		RETURN THIS.COUNT > 0 AND (THIS.ITEM( THIS.COUNT ) = 'A')
+	ENDFUNC
 *----------------------------
-	function pop()
+	FUNCTION POP()
 *----------------------------
-	cret = this.item( this.count )
-	this.remove( this.count )
-	return m.cret
-
+		cret = THIS.ITEM( THIS.COUNT )
+		THIS.REMOVE( THIS.COUNT )
+		RETURN m.cret
+	ENDFUNC
 ******************************************
-enddefine
+ENDDEFINE
 ******************************************
